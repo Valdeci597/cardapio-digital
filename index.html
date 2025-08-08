@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cardápio Digital</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Adicione os SDKs do Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+    <style>
+        :root {
+            --primary: #E74C3C;
+            --primary-dark: #C0392B;
+            --secondary: #2ECC71;
+            --dark: #2C3E50;
+            --light: #ECF0F1;
+            --gray: #95A5A6;
+            --light-gray: #BDC3C7;
+            --white: #FFFFFF;
+            --black: #1A1A1A;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+
+        body {
+            background-color: #FAFAFA;
+            color: var(--dark);
+            line-height: 1.6;
+        }
+
+        /* [Manter todos os outros estilos do CSS anterior] */
+
+        /* Novo estilo para o modal de login */
+        .login-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 3000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .login-modal.open {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .login-content {
+            background-color: var(--white);
+            width: 90%;
+            max-width: 400px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transform: translateY(20px);
+            transition: transform 0.3s;
+        }
+
+        .login-modal.open .login-content {
+            transform: translateY(0);
+        }
+
+        .login-header {
+            padding: 20px;
+            background-color: var(--primary);
+            color: white;
+            position: relative;
+        }
+
+        .login-header h2 {
+            font-size: 1.5rem;
+        }
+
+        .login-body {
+            padding: 25px;
+        }
+
+        .login-error {
+            color: var(--primary);
+            margin-bottom: 15px;
+            text-align: center;
+            display: none;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 15px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 15px;
+        }
+
+        .login-btn:hover {
+            background-color: var(--primary-dark);
+        }
+    </style>
+</head>
+<body>
+    <!-- Cardápio Principal -->
+    <div class="main-menu">
+        <header>
+            <div class="logo-container">
+                <img id="restaurant-logo" src="https://via.placeholder.com/180x80?text=Card%C3%A1pio+Digital" alt="Logo do Estabelecimento">
+            </div>
+            <h1 id="restaurant-name">Cardápio Digital</h1>
+            <div class="header-actions">
+                <button class="btn btn-primary" id="admin-toggle">
+                    <i class="fas fa-cog"></i> Admin
+                </button>
+                <button class="btn-cart" id="open-cart">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span class="cart-count" id="cart-count">0</span>
+                </button>
+            </div>
+        </header>
+        
+        <div class="menu-container" id="menu-items">
+            <!-- Itens serão carregados aqui via JavaScript -->
+        </div>
+    </div>
+    
+    <!-- Carrinho de Pedidos -->
+    <div class="cart-modal" id="cart-modal">
+        <div class="cart-header">
+            <h2><i class="fas fa-shopping-cart"></i> Seu Pedido</h2>
+            <button class="close-cart" id="close-cart">&times;</button>
+        </div>
+        <div class="cart-body" id="cart-body">
+            <!-- Itens do carrinho serão carregados aqui -->
+        </div>
+        <div class="cart-footer">
+            <div class="cart-total">
+                <span>Total:</span>
+                <span id="cart-total">R$ 0,00</span>
+            </div>
+            <button class="checkout-btn" id="checkout-btn">
+                <i class="fas fa-arrow-right"></i> Finalizar Pedido
+            </button>
+        </div>
+    </div>
+    
+    <!-- Modal Finalização -->
+    <div class="checkout-modal" id="checkout-modal">
+        <div class="checkout-content">
+            <div class="checkout-header">
+                <h2><i class="fas fa-receipt"></i> Finalizar Pedido</h2>
+                <button class="close-checkout" id="close-checkout">&times;</button>
+            </div>
+            <div class="checkout-body">
+                <form id="checkout-form">
+                    <div class="form-group">
+                        <label for="order-type">Tipo de Pedido:</label>
+                        <select class="form-control form-select" id="order-type" required>
+                            <option value="">Selecione...</option>
+                            <option value="dine-in">Comer no local</option>
+                            <option value="takeaway">Retirada</option>
+                            <option value="delivery">Entrega</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="customer-name">Nome:</label>
+                        <input type="text" class="form-control" id="customer-name" required placeholder="Seu nome completo">
+                    </div>
+                    
+                    <div id="dine-in-fields" class="order-fields" style="display: none;">
+                        <div class="form-group">
+                            <label for="table-number">Número da Mesa:</label>
+                            <input type="text" class="form-control" id="table-number" placeholder="Ex: 5">
+                        </div>
+                    </div>
+                    
+                    <div id="delivery-fields" class="order-fields" style="display: none;">
+                        <div class="form-group">
+                            <label for="delivery-address">Endereço de Entrega:</label>
+                            <textarea class="form-control" id="delivery-address" rows="3" placeholder="Rua, número, bairro, complemento..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="payment-method">Forma de Pagamento:</label>
+                        <select class="form-control form-select" id="payment-method" required>
+                            <option value="">Selecione...</option>
+                            <option value="cash">Dinheiro</option>
+                            <option value="credit">Cartão de Crédito</option>
+                            <option value="debit">Cartão de Débito</option>
+                            <option value="pix">PIX</option>
+                        </select>
+                    </div>
+                    
+                    <div class="order-summary">
+                        <h3>Resumo do Pedido</h3>
+                        <div id="order-summary-items">
+                            <!-- Itens do pedido serão exibidos aqui -->
+                        </div>
+                        <div class="summary-total">
+                            <span>Total:</span>
+                            <span id="order-total">R$ 0,00</span>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="submit-order">
+                        <i class="fab fa-whatsapp"></i> Enviar Pedido
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal de Login -->
+    <div class="login-modal" id="login-modal">
+        <div class="login-content">
+            <div class="login-header">
+                <h2><i class="fas fa-lock"></i> Acesso Administrativo</h2>
+            </div>
+            <div class="login-body">
+                <div class="login-error" id="login-error">
+                    Senha incorreta. Tente novamente.
+                </div>
+                <div class="form-group">
+                    <label for="admin-password">Senha:</label>
+                    <input type="password" class="form-control" id="admin-password" placeholder="Digite a senha de administrador">
+                </div>
+                <button class="login-btn" id="login-btn">
+                    <i class="fas fa-sign-in-alt"></i> Entrar
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Overlay -->
+    <div class="overlay" id="overlay"></div>
+    
+    <!-- Painel Administrativo -->
+    <div class="admin-panel" id="admin-panel">
+        <div class="admin-header">
+            <h1><i class="fas fa-cog"></i> Painel Administrativo</h1>
+            <button class="btn btn-secondary" id="close-admin">
+                <i class="fas fa-times"></i> Fechar
+            </button>
+        </div>
+        
+        <div class="admin-tabs">
+            <button class="admin-tab active" data-tab="config-tab">Configurações</button>
+            <button class="admin-tab" data-tab="menu-tab">Cardápio</button>
+        </div>
+        
+        <div class="admin-content">
+            <div class="admin-section active" id="config-tab">
+                <h2>Configurações Gerais</h2>
+                
+                <div class="form-group">
+                    <label for="restaurant-name-input">Nome do Estabelecimento:</label>
+                    <input type="text" class="form-control" id="restaurant-name-input" placeholder="Nome do seu estabelecimento">
+                </div>
+                
+                <div class="form-group">
+                    <label for="logo-upload">Logo:</label>
+                    <input type="file" class="form-control" id="logo-upload" accept="image/*">
+                    <small>Recomendado: 180x80 pixels</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="whatsapp-number">Número do WhatsApp:</label>
+                    <input type="text" class="form-control" id="whatsapp-number" placeholder="5511999999999">
+                    <small>Formato: 5511999999999 (código do país + DDD + número)</small>
+                </div>
+                
+                <button class="btn btn-primary" id="save-config">
+                    <i class="fas fa-save"></i> Salvar Configurações
+                </button>
+            </div>
+            
+            <div class="admin-section" id="menu-tab">
+                <h2>Gerenciar Cardápio</h2>
+                
+                <button class="btn btn-secondary" id="add-item-btn">
+                    <i class="fas fa-plus"></i> Adicionar Novo Item
+                </button>
+                
+                <div class="admin-items" id="admin-item-list">
+                    <!-- Itens serão carregados aqui -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal de Edição/Criação de Item -->
+    <div class="checkout-modal" id="item-modal">
+        <div class="checkout-content" style="max-width: 600px;">
+            <div class="checkout-header">
+                <h2 id="item-modal-title"><i class="fas fa-utensils"></i> Adicionar Item</h2>
+                <button class="close-checkout" id="close-item-modal">&times;</button>
+            </div>
+            <div class="checkout-body">
+                <form id="item-form">
+                    <input type="hidden" id="item-id">
+                    
+                    <div class="form-group">
+                        <label for="item-name">Nome do Item:</label>
+                        <input type="text" class="form-control" id="item-name" required placeholder="Ex: Pizza Margherita">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="item-description">Descrição:</label>
+                        <textarea class="form-control" id="item-description" rows="3" required placeholder="Descreva o item"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="item-price">Preço:</label>
+                        <input type="number" class="form-control" id="item-price" step="0.01" min="0" required placeholder="Ex: 49.90">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="item-image-upload">Imagem do Item:</label>
+                        <input type="file" class="form-control" id="item-image-upload" accept="image/*">
+                        <small>Opcional - Caso não envie, usaremos uma imagem padrão</small>
+                        <div id="item-image-preview-container" style="margin-top: 10px; display: none;">
+                            <img id="item-image-preview" src="#" alt="Preview" style="max-width: 100%; max-height: 200px; border-radius: 8px; border: 2px solid var(--light-gray);">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="item-category">Categoria:</label>
+                        <input type="text" class="form-control" id="item-category" placeholder="Ex: Pizzas, Bebidas, Entradas">
+                    </div>
+                    
+                    <button type="submit" class="submit-order" id="save-item-btn">
+                        <i class="fas fa-save"></i> Salvar Item
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuração do Firebase
+        const firebaseConfig = {
+            apiKey: "SUA_API_KEY",
+            authDomain: "SEU_PROJETO.firebaseapp.com",
+            databaseURL: "https://SEU_PROJETO.firebaseio.com",
+            projectId: "SEU_PROJETO",
+            storageBucket: "SEU_PROJETO.appspot.com",
+            messagingSenderId: "SEU_SENDER_ID",
+            appId: "SEU_APP_ID"
+        };
+
+        // Inicializa o Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        const auth = firebase.auth();
+
+        // Dados iniciais
+        let restaurantData = {
+            name: "Cardápio Digital",
+            logo: "https://via.placeholder.com/180x80?text=Card%C3%A1pio+Digital",
+            whatsapp: ""
+        };
+        
+        let menuItems = [];
+        let cart = [];
+        let editingItemId = null;
+        
+        // Elementos do DOM
+        const elements = {
+            // Cardápio principal
+            menuContainer: document.getElementById('menu-items'),
+            restaurantName: document.getElementById('restaurant-name'),
+            restaurantLogo: document.getElementById('restaurant-logo'),
+            
+            // Carrinho
+            openCartBtn: document.getElementById('open-cart'),
+            closeCartBtn: document.getElementById('close-cart'),
+            cartModal: document.getElementById('cart-modal'),
+            cartBody: document.getElementById('cart-body'),
+            cartCount: document.getElementById('cart-count'),
+            cartTotal: document.getElementById('cart-total'),
+            checkoutBtn: document.getElementById('checkout-btn'),
+            
+            // Finalização
+            checkoutModal: document.getElementById('checkout-modal'),
+            closeCheckoutBtn: document.getElementById('close-checkout'),
+            checkoutForm: document.getElementById('checkout-form'),
+            orderType: document.getElementById('order-type'),
+            orderSummary: document.getElementById('order-summary-items'),
+            orderTotal: document.getElementById('order-total'),
+            dineInFields: document.getElementById('dine-in-fields'),
+            deliveryFields: document.getElementById('delivery-fields'),
+            
+            // Login
+            loginModal: document.getElementById('login-modal'),
+            adminPassword: document.getElementById('admin-password'),
+            loginBtn: document.getElementById('login-btn'),
+            loginError: document.getElementById('login-error'),
+            
+            // Overlay
+            overlay: document.getElementById('overlay'),
+            
+            // Admin
+            adminToggle: document.getElementById('admin-toggle'),
+            closeAdminBtn: document.getElementById('close-admin'),
+            adminPanel: document.getElementById('admin-panel'),
+            adminTabs: document.querySelectorAll('.admin-tab'),
+            adminSections: document.querySelectorAll('.admin-section'),
+            restaurantNameInput: document.getElementById('restaurant-name-input'),
+            whatsappNumber: document.getElementById('whatsapp-number'),
+            saveConfigBtn: document.getElementById('save-config'),
+            addItemBtn: document.getElementById('add-item-btn'),
+            adminItemList: document.getElementById('admin-item-list'),
+            
+            // Item modal
+            itemModal: document.getElementById('item-modal'),
+            closeItemModalBtn: document.getElementById('close-item-modal'),
+            itemForm: document.getElementById('item-form'),
+            itemModalTitle: document.getElementById('item-modal-title'),
+            itemId: document.getElementById('item-id'),
+            itemName: document.getElementById('item-name'),
+            itemDescription: document.getElementById('item-description'),
+            itemPrice: document.getElementById('item-price'),
+            itemImageUpload: document.getElementById('item-image-upload'),
+            itemImagePreviewContainer: document.getElementById('item-image-preview-container'),
+            itemImagePreview: document.getElementById('item-image-preview'),
+            itemCategory: document.getElementById('item-category'),
+            saveItemBtn: document.getElementById('save-item-btn'),
+            logoUpload: document.getElementById('logo-upload')
+        };
+
+        // ======================
+        // Funções do Firebase
+        // ======================
+
+        function loadRestaurantData() {
+            database.ref('restaurant').once('value').then((snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    restaurantData = data;
+                    updateRestaurantUI();
+                }
+            });
+        }
+
+        function saveRestaurantData() {
+            database.ref('restaurant').set(restaurantData)
+                .then(() => {
+                    alert('Configurações salvas com sucesso!');
+                })
+                .catch((error) => {
+                    console.error('Erro ao salvar configurações:', error);
+                    alert('Erro ao salvar configurações. Tente novamente.');
+                });
+        }
+
+        function loadMenuItems() {
+            database.ref('menuItems').once('value').then((snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    menuItems = Object.values(data);
+                    renderMenuItems();
+                }
+            });
+        }
+
+        function saveMenuItem(item) {
+            if (item.id) {
+                // Atualizar item existente
+                database.ref('menuItems/' + item.id).set(item)
+                    .then(() => {
+                        console.log('Item atualizado com sucesso');
+                    })
+                    .catch((error) => {
+                        console.error('Erro ao atualizar item:', error);
+                    });
+            } else {
+                // Criar novo item
+                const newItemRef = database.ref('menuItems').push();
+                item.id = newItemRef.key;
+                newItemRef.set(item)
+                    .then(() => {
+                        console.log('Item adicionado com sucesso');
+                    })
+                    .catch((error) => {
+                        console.error('Erro ao adicionar item:', error);
+                    });
+            }
+        }
+
+        function deleteMenuItem(itemId) {
+            database.ref('menuItems/' + itemId).remove()
+                .then(() => {
+                    console.log('Item removido com sucesso');
+                })
+                .catch((error) => {
+                    console.error('Erro ao remover item:', error);
+                });
+        }
+
+        // ======================
+        // Funções Principais
+        // ======================
+
+        function updateRestaurantUI() {
+            elements.restaurantName.textContent = restaurantData.name;
+            elements.restaurantLogo.src = restaurantData.logo;
+            elements.restaurantNameInput.value = restaurantData.name;
+            elements.whatsappNumber.value = restaurantData.whatsapp;
+        }
+
+        function renderMenuItems() {
+            elements.menuContainer.innerHTML = '';
+            
+            if (menuItems.length === 0) {
+                elements.menuContainer.innerHTML = `
+                    <div style="grid-column:1/-1; text-align:center; padding:40px;">
+                        <i class="fas fa-utensils" style="font-size:3rem; color:var(--light-gray); margin-bottom:15px;"></i>
+                        <p style="color:var(--gray);">Nenhum item disponível no cardápio</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Agrupa itens por categoria
+            const categories = [...new Set(menuItems.map(item => item.category || 'Outros'))];
+            
+            categories.forEach(category => {
+                // Cabeçalho da categoria
+                const categoryHeader = document.createElement('h2');
+                categoryHeader.textContent = category;
+                categoryHeader.style.gridColumn = '1/-1';
+                categoryHeader.style.marginTop = '30px';
+                categoryHeader.style.color = 'var(--dark)';
+                categoryHeader.style.fontSize = '1.5rem';
+                categoryHeader.style.borderBottom = '2px solid var(--primary)';
+                categoryHeader.style.paddingBottom = '10px';
+                elements.menuContainer.appendChild(categoryHeader);
+                
+                // Itens da categoria
+                const categoryItems = menuItems.filter(item => (item.category || 'Outros') === category);
+                
+                categoryItems.forEach(item => {
+                    const itemElement = document.createElement('div');
+                    itemElement.className = 'menu-item';
+                    itemElement.innerHTML = `
+                        <img src="${item.image || 'https://via.placeholder.com/300x200?text=Produto'}" alt="${item.name}" class="menu-item-img">
+                        <div class="menu-item-content">
+                            <h3>${item.name}</h3>
+                            <p>${item.description}</p>
+                            <div class="menu-item-footer">
+                                <span class="price">R$ ${item.price.toFixed(2)}</span>
+                                <div class="item-actions">
+                                    <button class="action-btn minus-btn" data-id="${item.id}">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                    <span class="action-quantity" data-id="${item.id}" style="display:none;">0</span>
+                                    <button class="action-btn plus-btn" data-id="${item.id}">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="category-badge">${item.category || 'Outros'}</div>
+                    `;
+                    
+                    elements.menuContainer.appendChild(itemElement);
+                });
+            });
+            
+            // Atualiza quantidades no cardápio
+            updateMenuQuantities();
+            
+            // Adiciona eventos aos botões de adicionar/remover
+            document.querySelectorAll('.plus-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const itemId = this.getAttribute('data-id');
+                    addToCart(itemId);
+                });
+            });
+            
+            document.querySelectorAll('.minus-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const itemId = this.getAttribute('data-id');
+                    removeFromCart(itemId);
+                });
+            });
+        }
+
+        // [Manter todas as outras funções como renderAdminItems, addToCart, removeFromCart, etc.]
+        // [Adaptar as funções de save para usar as funções do Firebase]
+
+        // ======================
+        // Autenticação
+        // ======================
+
+        function checkAdminPassword(password) {
+            // Senha padrão (em produção, use um sistema de autenticação mais seguro)
+            return password === "admin123";
+        }
+
+        function openLoginModal() {
+            elements.loginModal.classList.add('open');
+            elements.overlay.classList.add('open');
+            elements.adminPassword.value = '';
+            elements.loginError.style.display = 'none';
+        }
+
+        function closeLoginModal() {
+            elements.loginModal.classList.remove('open');
+            elements.overlay.classList.remove('open');
+        }
+
+        function login() {
+            const password = elements.adminPassword.value;
+            if (checkAdminPassword(password)) {
+                closeLoginModal();
+                toggleAdminPanel();
+            } else {
+                elements.loginError.style.display = 'block';
+            }
+        }
+
+        // ======================
+        // Event Listeners
+        // ======================
+
+        // Admin
+        elements.adminToggle.addEventListener('click', openLoginModal);
+        elements.closeAdminBtn.addEventListener('click', toggleAdminPanel);
+        elements.loginBtn.addEventListener('click', login);
+        elements.adminPassword.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                login();
+            }
+        });
+
+        // [Manter os outros event listeners]
+
+        // ======================
+        // Inicialização
+        // ======================
+
+        function init() {
+            // Carrega dados do Firebase
+            loadRestaurantData();
+            loadMenuItems();
+            
+            // Carrega carrinho do localStorage (temporário)
+            const savedCart = localStorage.getItem('cart');
+            if (savedCart) {
+                cart = JSON.parse(savedCart) || [];
+                updateCart();
+            }
+        }
+
+        // Inicia o sistema quando a página carrega
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
